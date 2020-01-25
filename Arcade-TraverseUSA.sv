@@ -99,8 +99,8 @@ assign HDMI_ARY = status[1] ? 8'd9  : status[2] ? 8'd3 : 8'd4;
 `include "build_id.v" 
 localparam CONF_STR = {
 	"A.TRAVRUSA;;",
-	"O1,Aspect Ratio,Original,Wide;",
-	"O2,Orientation,Vert,Horz;",
+	"H0O1,Aspect Ratio,Original,Wide;",
+	"H0O2,Orientation,Vert,Horz;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 	"O89,Fuel Lst W Coll,Low,Med,High,Max;",
@@ -112,7 +112,9 @@ localparam CONF_STR = {
 	"OF,Units,M/H,Km;",
 	"-;",
 	"R0,Reset;",
-	"J1,Gas,Brake,Start 1P,Start 2P;",
+	"J1,Gas,Brake,Start 1P,Start 2P,Coin;",
+	"jn,A,B,Start,Select,R;",
+
 	"V,v",`BUILD_DATE
 };
 
@@ -129,16 +131,16 @@ wire [7:0]m_dip_2 = {status[13],1'b0,status[14],1'b0,status[15],1'b0,~status[12]
 
 wire clk_sys, clk_snd;
 wire pll_locked;
-wire clk_36,clk_3p58,clk_24,clk_6;
+wire clk_36,clk_3p58,clk_72,clk_6;
 assign clk_sys=clk_36;
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
-	.outclk_0(clk_36),
-	.outclk_1(clk_3p58),
-	.outclk_2(clk_24),
-	.outclk_3(clk_6),
+	.outclk_0(clk_72),
+	.outclk_1(clk_36),
+	.outclk_2(clk_6),
+	.outclk_3(clk_3p58),
 	.locked(pll_locked)
 );
 
@@ -155,6 +157,7 @@ end
 wire [31:0] status;
 wire  [1:0] buttons;
 wire        forced_scandoubler;
+wire        direct_video;
 
 wire        ioctl_download;
 wire        ioctl_wr;
@@ -178,8 +181,10 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 
 	.buttons(buttons),
 	.status(status),
+	.status_menumask(direct_video),
 	.forced_scandoubler(forced_scandoubler),
 	.gamma_bus(gamma_bus),
+	.direct_video(direct_video),
 
 	.ioctl_download(ioctl_download),
 	.ioctl_wr(ioctl_wr),
@@ -203,11 +208,11 @@ always @(posedge clk_sys) begin
 			'hX72: btn_down        <= pressed; // down
 			'hX6B: btn_left        <= pressed; // left
 			'hX74: btn_right       <= pressed; // right
-			'h029: btn_gas        <= pressed; // space
-			'h014: btn_brake        <= pressed; // ctrl
+			'h029: btn_gas         <= pressed; // space
+			'h014: btn_brake       <= pressed; // ctrl
 
-			'h005: btn_one_player  <= pressed; // F1
-			'h006: btn_two_players <= pressed; // F2
+			'h005: btn_start_1     <= pressed; // F1
+			'h006: btn_start_2     <= pressed; // F2
 			
 			// JPAC/IPAC/MAME Style Codes
 			'h016: btn_start_1     <= pressed; // 1
@@ -218,8 +223,8 @@ always @(posedge clk_sys) begin
 			'h02B: btn_down_2      <= pressed; // F
 			'h023: btn_left_2      <= pressed; // D
 			'h034: btn_right_2     <= pressed; // G
-			'h01C: btn_gas_2      <= pressed; // A
-			'h01B: btn_brake_2    <= pressed; // S
+			'h01C: btn_gas_2       <= pressed; // A
+			'h01B: btn_brake_2     <= pressed; // S
 		endcase
 	end
 end
@@ -229,8 +234,6 @@ reg btn_down  = 0;
 reg btn_right = 0;
 reg btn_left  = 0;
 reg btn_fire  = 0;
-reg btn_one_player  = 0;
-reg btn_two_players = 0;
 reg btn_gas = 0;
 reg btn_brake = 0;
 
@@ -259,9 +262,9 @@ wire m_right_2  = status[2] ? btn_up_2    | joy[3] : btn_right_2 | joy[0];
 wire m_gas_2  = btn_gas_2 | joy[4];
 wire m_brake_2 = btn_brake_2 | joy[5];
 
-wire m_start1 = btn_one_player  | joy[6];
-wire m_start2 = btn_two_players | joy[7];
-wire m_coin   = m_start1 | m_start2;
+wire m_start1 = btn_start_1  | joy[6];
+wire m_start2 = btn_start_2 | joy[7];
+wire m_coin   = btn_coin_1 | joy[8];
 
 
 wire hblank, vblank;
@@ -272,15 +275,22 @@ wire [2:0] g;
 wire [2:0] b;
 wire [2:0] r={rs,1'b0};
 
+wire no_rotate = status[2] | direct_video;
+reg ce_pix;
+always @(posedge clk_72) begin
+        reg [2:0] div;
+
+        div <= div + 1'd1;
+        ce_pix <= !div;
+end
+
 // see note in readme about weird video problems
-arcade_rotate_fx #(384,282,9) arcade_video
+arcade_video #(384,282,9) arcade_video
 //arcade_rotate_fx #(360,248,9) arcade_video
 (
 	.*,
 
-	.clk_video(clk_sys),
-	//.clk_video(clk_24),
-	.ce_pix(ce_vid),
+	.clk_video(clk_72),
 
 	.RGB_in({r,g,b}),
 	.HBlank(hblank),
@@ -288,8 +298,8 @@ arcade_rotate_fx #(384,282,9) arcade_video
 	.HSync(hs),
 	.VSync(vs),
 	
-	.fx(status[5:3]),
-	.no_rotate(status[2])
+	.rotate_ccw(0),
+	.fx(status[5:3])
 );
 
 
@@ -332,9 +342,9 @@ traverse_usa traverse_usa
 
 // dip_switch_1   : in std_logic_vector(7 downto 0); -- Coinage_B(7-4) / Cont. play(3) / Fuel consumption(2) / Fuel lost when collision (1-0)
 // dip_switch_2   : in std_logic_vector(7 downto 0); -- Diag(7) / Demo(6) / Zippy(5) / Freeze (4) / M-Km(3) / Coin mode (2) / Cocktail(1) / Flip(0)
-  .start2(m_start2|btn_start_2),
-  .start1(m_start1|btn_start_1),
-  .coin1(m_coin|btn_coin_2|btn_coin_1),
+  .start2(m_start2),
+  .start1(m_start1),
+  .coin1(m_coin|btn_coin_2),
   .right1(m_right),
   .left1(m_left),
   .accel1(m_gas),
