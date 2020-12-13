@@ -305,7 +305,7 @@ begin
 
 
 rom_cpu_cs <= '1' when dn_addr(16 downto 15) = "00"     else '0';
-rom_snd_cs <= '1' when dn_addr(16 downto 11) = "0100"     else '0';
+rom_snd_cs <= '1' when dn_addr(16 downto 13) = "0100"     else '0';
 rom_gfx_1_cs <= '1' when dn_addr(16 downto 13) = "0101"     else '0'; 
 rom_gfx_2_cs <= '1' when dn_addr(16 downto 13) = "0110"     else '0'; 
 rom_gfx_3_cs <= '1' when dn_addr(16 downto 13) = "0111"     else '0'; 
@@ -775,7 +775,7 @@ if rising_edge(clock_36) and pix_ena = '1' then
 
 	-- vcnt : [230-511] 282 lines
 	if    vcnt = 230 then vblank <= '1';
-	elsif vcnt = 260 then vblank <= '0';
+	elsif vcnt = 256 then vblank <= '0';
 	end if;
 
 	-- external sync and blank outputs

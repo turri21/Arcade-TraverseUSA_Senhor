@@ -12,4 +12,3 @@ set_global_assignment -name VHDL_FILE rtl_T80/T80_ALU.vhd
 set_global_assignment -name VHDL_FILE rtl_T80/T80.vhd
 set_global_assignment -name VHDL_FILE rtl_dar/traverse_usa.vhd
 set_global_assignment -name VHDL_FILE rtl_dar/gen_ram.vhd
-set_global_assignment -name VHDL_FILE travusa_sound.vhd

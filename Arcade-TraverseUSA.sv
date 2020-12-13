@@ -166,13 +166,6 @@ pll pll
 
 
 
-reg clk_aud2;
-always @(posedge clk_36) begin
-        reg [4:0] div;
-
-        div <= div + 1'd1;
-        clk_aud2 <= !div;
-end
 
 ///////////////////////////////////////////////////
 
