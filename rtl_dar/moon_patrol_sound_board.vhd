@@ -27,30 +27,32 @@ use ieee.numeric_std.all;
 entity moon_patrol_sound_board is
 port(
  clock_36   : in std_logic;
- clock_3p58   : in std_logic;
- reset        : in std_logic;
- 
+ clock_E      : in std_logic; -- 3.58 Mhz/4
+ areset       : in std_logic;
+
  select_sound : in std_logic_vector(7 downto 0);
  audio_out    : out std_logic_vector(11 downto 0);
  
- dbg_cpu_addr : out std_logic_vector(15 downto 0);
  
  -- signals that carry the ROM data from the MiSTer disk
  dn_addr        	: in  std_logic_vector(16 downto 0);
  dn_data        	: in  std_logic_vector(7 downto 0);
  dn_wr          	: in  std_logic;
 			
- rom_snd_cs				: in  std_logic
+ rom_snd_cs				: in  std_logic;
+ 
+ dbg_cpu_addr : out std_logic_vector(15 downto 0)
+
 
 );
 end moon_patrol_sound_board;
 
 architecture struct of moon_patrol_sound_board is
 
- signal reset_n   : std_logic;
- signal clock_div : std_logic_vector(3 downto 0);
+ signal reset      : std_logic := '1';
+ signal reset_n    : std_logic;
+ signal reset_cnt  : integer range 0 to 1000000 := 1000000;
 
- signal cpu_clock  : std_logic;
  signal cpu_addr   : std_logic_vector(15 downto 0);
  signal cpu_di     : std_logic_vector( 7 downto 0);
  signal cpu_do     : std_logic_vector( 7 downto 0);
@@ -68,12 +70,18 @@ architecture struct of moon_patrol_sound_board is
  signal rom_cs    : std_logic;
  signal rom_do    : std_logic_vector( 7 downto 0);
 
+ signal ay1_chan_a    : std_logic_vector(7 downto 0);
+ signal ay1_chan_b    : std_logic_vector(7 downto 0);
+ signal ay1_chan_c    : std_logic_vector(7 downto 0);
  signal ay1_do        : std_logic_vector(7 downto 0);
- signal ay1_audio     : std_logic_vector(7 downto 0);
+ signal ay1_audio     : std_logic_vector(9 downto 0);
  signal ay1_port_b_do : std_logic_vector(7 downto 0);
-  
+ 
+ signal ay2_chan_a    : std_logic_vector(7 downto 0);
+ signal ay2_chan_b    : std_logic_vector(7 downto 0);
+ signal ay2_chan_c    : std_logic_vector(7 downto 0);
  signal ay2_do        : std_logic_vector(7 downto 0);
- signal ay2_audio     : std_logic_vector(7 downto 0);
+ signal ay2_audio     : std_logic_vector(9 downto 0);
 
  signal ports_cs    : std_logic;
  signal ports_we    : std_logic;
@@ -92,7 +100,7 @@ architecture struct of moon_patrol_sound_board is
  signal adpcm_we    : std_logic;
  signal adpcm_0_di  : std_logic_vector(3 downto 0);
   
- signal select_sound_7r : std_logic;
+ signal select_sound_r  : std_logic_vector(7 downto 0);
 
  signal audio : std_logic_vector(12 downto 0);
  
@@ -131,37 +139,22 @@ architecture struct of moon_patrol_sound_board is
  
 begin
 
+dbg_cpu_addr <= cpu_addr;
 reset_n   <= not reset;
 
-dbg_cpu_addr <= cpu_addr;
-
--- clock divider
-process (reset, clock_3p58)
-begin
-	if reset='1' then
-		clock_div   <= (others => '0');
-	else 
-		if rising_edge(clock_3p58) then
-			clock_div  <= clock_div + '1';
-		end if;
-	end if;
-end process;
-
--- cpu_clock is 3.58/4
-cpu_clock <= clock_div(1);
 
 -- cs
 wram_cs   <= '1' when cpu_addr(15 downto  7) = X"00"&'1' else '0'; -- 0080-00FF
 ports_cs  <= '1' when cpu_addr(15 downto  4) = X"000"    else '0'; -- 0000-000F
 adpcm_cs  <= '1' when cpu_addr(14 downto 11) = "0001"    else '0'; -- 0800-0FFF / 8800-8FFF
 irqraz_cs <= '1' when cpu_addr(14 downto 12) = "001"     else '0'; -- 1000-1FFF / 9000-9FFF
-rom_cs    <= '1' when cpu_addr(14 downto 12) = "111"     else '0'; -- 7000-7FFF / F000-FFFF
+rom_cs    <= '1' when cpu_addr(14 downto 13) = "11"      else '0'; -- 6000-7FFF / E000-FFFF
 	
 -- write enables
-wram_we <=   '1' when cpu_rw = '0' and cpu_clock = '1' and wram_cs =   '1' else '0';
-ports_we <=  '1' when cpu_rw = '0' and cpu_clock = '1' and ports_cs =  '1' else '0';
-adpcm_we <=  '1' when cpu_rw = '0' and cpu_clock = '1' and adpcm_cs =  '1' else '0';
-irqraz_we <= '1' when cpu_rw = '0' and cpu_clock = '1' and irqraz_cs = '1' else '0';
+wram_we <=   '1' when cpu_rw = '0' and wram_cs =   '1' else '0';
+ports_we <=  '1' when cpu_rw = '0' and ports_cs =  '1' else '0';
+adpcm_we <=  '1' when cpu_rw = '0' and adpcm_cs =  '1' else '0';
+irqraz_we <= '1' when cpu_rw = '0' and irqraz_cs = '1' else '0';
 
 -- mux cpu in data between roms/io/wram
 cpu_di <=
@@ -172,22 +165,33 @@ cpu_di <=
 	port2_in  when ports_cs = '1' and cpu_addr(3 downto 0) = X"3" else
 	rom_do when rom_cs = '1' else X"55";
 
+process (clock_E)
+begin
+	if rising_edge(clock_E) then
+		reset <= '0';
+		if reset_cnt /= 0 then
+			reset_cnt <= reset_cnt - 1;
+			reset <= '1';
+		end if;
+		if areset = '1' then
+		   reset_cnt <= 1000000;
+		end if;
+	end if;
+end process;
+
 -- irq to cpu
-process (reset, clock_div(0))
-	variable select_sound_7r : std_logic;
+process (reset, clock_E)
 begin
 	if reset='1' then
-		cpu_irq  <= '0';
-		select_sound_7r := '0';
-	else 
-		if rising_edge(clock_div(0)) then
-			if select_sound_7r = '0' and select_sound(7) = '1' then
-				cpu_irq  <= '1';
-			end if;
-			if irqraz_we = '1' then
-				cpu_irq  <= '0';			
-			end if;
-			select_sound_7r := select_sound(7);
+		cpu_irq <= '0';
+		select_sound_r(7) <= '0';
+	elsif rising_edge(clock_E) then
+		select_sound_r <= select_sound;
+		if select_sound_r(7) = '0' then
+			cpu_irq  <= '1';
+		end if;
+		if irqraz_we = '1' then
+			cpu_irq  <= '0';
 		end if;
 	end if;
 end process;
@@ -196,22 +200,20 @@ end process;
 cpu_nmi <= adpcm_vclk;
 
 -- 6803 ports 1 and 2 (only)
-process (reset, clock_div(0))
+process (reset, clock_E)
 begin
 	if reset='1' then
 		port1_ddr  <= (others=>'0');  -- port1 set as input
 		port1_data <= (others=>'0');  -- port1 data set to 0
 		port2_ddr  <= ("11100000");   -- port2 bit 7 to 5 should always remain output to simulate mode data
 		port2_data <= ("01000000");   -- port2 data bit 7 to 5 set to 2 (for mode 2 at start up)
-	else 
-		if rising_edge(clock_div(0)) then
+	elsif rising_edge(clock_E) then
 			if ports_cs = '1' and ports_we = '1' then
 				if cpu_addr(3 downto 0) = X"0" then port1_ddr  <= cpu_do; end if;
 				if cpu_addr(3 downto 0) = X"1" then port2_ddr  <= cpu_do and "11100000"; end if;
 				if cpu_addr(3 downto 0) = X"2" then port1_data <= cpu_do; end if; 
 				if cpu_addr(3 downto 0) = X"3" then port2_data <= cpu_do; end if;
 			end if;
-		end if;
 	end if;
 end process;
 
@@ -227,21 +229,19 @@ port2_bus <= X"FF";
 
 
 -- latch adpcm (msm5205) data in
-process (reset, clock_div(0))
+process (reset, clock_E)
 begin
 	if reset='1' then
 		adpcm_0_di <= (others=>'0');
-	else 
-		if rising_edge(clock_div(0)) then
+	elsif rising_edge(clock_E) then
 			if adpcm_cs = '1' and adpcm_we = '1' then
 				if cpu_addr(1) = '0' then adpcm_0_di  <= cpu_do(3 downto 0); end if;
 			end if;
-		end if;
 	end if;
 end process;
 
 -- adcpm clocks and computation -- make 24kHz and vclk 8/6/4kHz
-adpcm_clocks : process(clock_3p58, ay1_port_b_do)
+adpcm_clocks : process(clock_E, ay1_port_b_do)
 	variable clock_div_a : integer range 0 to 148 := 0;
 	variable clock_div_b : integer range 0 to 5 := 0;
 	variable step   : integer range  0 to 48;
@@ -250,8 +250,8 @@ adpcm_clocks : process(clock_3p58, ay1_port_b_do)
 	variable dn : integer range -32768 to 32767;
 	variable adpcm_signal_n : integer range -32768 to 32767;
 begin
-	if rising_edge(clock_3p58) then
-		if clock_div_a = 148 then   -- 24kHz
+	if rising_edge(clock_E) then
+		if clock_div_a = 37 then   -- 24kHz
 			clock_div_a := 0;
 			
 			case ay1_port_b_do(3 downto 2) is				
@@ -310,13 +310,13 @@ begin
 end process;
 
 -- audio mux
-audio <= ("00000"&ay1_audio) + ("00000"&ay2_audio) + ('0'&std_logic_vector(to_unsigned((adpcm_signal)+2048,12)));
+audio <= ("000"&ay1_audio) + ("000"&ay2_audio) + ('0'&std_logic_vector(to_unsigned((adpcm_signal)+2048,12)));
 audio_out <= audio(12 downto 1);
 				 
 -- microprocessor 6800/01/03
 main_cpu : entity work.cpu68
 port map(	
-	clk      => cpu_clock,-- E clock input (falling edge)
+	clk      => clock_E,  -- E clock input (falling edge)
 	rst      => reset,    -- reset input (active high)
 	rw       => cpu_rw,   -- read not write output
 	vma      => open,     -- valid memory address (active high)
@@ -334,21 +334,21 @@ port map(
 -- cpu program rom
 --cpu_prog_rom : entity work.travusa_sound
 --port map(
--- clk  => clock_div(0),  -- 3p58/2
+-- clk  => clock_E,
 -- addr => cpu_addr(11 downto 0),
 -- data => rom_do
 --);
 
-cpu_prog_rom : work.dpram generic map (12,8)
+cpu_prog_rom : work.dpram generic map (13,8)
 port map
 (
 	clock_a   => clock_36,
 	wren_a    => dn_wr and rom_snd_cs,
-	address_a => dn_addr(11 downto 0),
+	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
 
-	clock_b   => clock_div(0),
-	address_b => cpu_addr(11 downto 0),
+	clock_b   => clock_E,
+	address_b => cpu_addr(12 downto 0),
 	q_b       => rom_do
 );
 
@@ -357,7 +357,7 @@ port map
 cpu_ram : entity work.gen_ram
 generic map( dWidth => 8, aWidth => 7)
 port map(
- clk  => clock_div(0),  -- 3p58/2
+ clk  => clock_E,
  we   => wram_we,
  addr => cpu_addr(6 downto 0),
  d    => cpu_do,
@@ -379,8 +379,7 @@ port map(
   I_BC1      => port2_data(2),  -- in  std_logic;
   I_SEL_L    => '1',            -- in  std_logic;
 
-  O_AUDIO    => ay1_audio,         -- out std_logic_vector(7 downto 0);
---  O_CHAN     => ay1_audio_chan,  -- out std_logic_vector(1 downto 0);
+  O_AUDIO_L  => ay1_audio,         -- out std_logic_vector(9 downto 0);
   
   -- port a
   I_IOA      => select_sound, -- in  std_logic_vector(7 downto 0);
@@ -393,7 +392,7 @@ port map(
 
   ENA        => '1', --cpu_ena,  -- in  std_logic; -- clock enable for higher speed operation
   RESET_L    => reset_n,         -- in  std_logic;
-  CLK        => cpu_clock        -- in  std_logic  -- note 6 Mhz
+  CLK        => clock_E          -- in  std_logic
 );
 
 -- AY-3-8910 #2
@@ -411,8 +410,7 @@ port map(
   I_BC1      => port2_data(2),  -- in  std_logic;
   I_SEL_L    => '1',            -- in  std_logic;
 
-  O_AUDIO    => ay2_audio,         -- out std_logic_vector(7 downto 0);
---  O_CHAN     => ay2_audio_chan,  -- out std_logic_vector(1 downto 0);
+  O_AUDIO_L  => ay2_audio,      -- out std_logic_vector(9 downto 0);
   
   -- port a
   I_IOA      => (others => '0'), -- in  std_logic_vector(7 downto 0);
@@ -425,8 +423,7 @@ port map(
 
   ENA        => '1', --cpu_ena,         -- in  std_logic; -- clock enable for higher speed operation
   RESET_L    => reset_n,         -- in  std_logic;
-  CLK        => cpu_clock        -- in  std_logic  -- note 6 Mhz
+  CLK        => clock_E          -- in  std_logic
 );
-
 
 end struct;

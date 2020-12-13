@@ -7,6 +7,28 @@
 	<manufacturer>Irem</manufacturer>
 	<category>Racing / Motorbike</category>
 	<rbf>traverseusa</rbf>
+		
+ 	<switches default="FF,FE,00">
+		<dip bits="0,1"   name="Fuel Lst W Coll" ids="Max,Hi,Med,Low" />
+		<dip bits="2"   name="Fuel Consumption" ids="High,Low" />
+		<dip bits="3"   name="Allow Continue" ids="Yes,Now" />
+		<dip bits="4,7"   name="Coinage" ids="Free_Play,NA,1C_7C,1C_6C,1C_5C,1C_4C,1C_3C,1C_2C,1C_1C"/>
+		<dip bits="8"   name="Flip Screen" ids="On,Off" />
+		<dip bits="9"   name="Cabinet" ids="Upright,Cocktail" />
+		<dip bits="10"   name="Coin mode" ids="Mode 2,Mode 1" />
+		<dip bits="11"   name="Speed Type" ids="Km/H,M/H" />
+		<dip bits="12"   name="Stop Mode" ids="On, Off" />
+		<dip bits="13"   name="Title" ids="Zippy Race,Traverse USA" />
+		<dip bits="14"   name="Invulnerability" ids="On,Off" />
+		<dip bits="15"   name="Service" ids="On,Off" />
+	</switches>
+
+	<buttons names="Gas,Brake,Start 1P,Start 2P,Coin" default="A,B,Start,Select,R"/>
+
+	<rom index="1">
+		<part>0</part>
+	</rom>
+	
 	<rom index="0" zip="travrusa.zip" md5="67d6330459d5180670c25842fc3d1d11">
 		<part crc="be066c0a" name="zr1-0.m3"/>
 		<part crc="145d6b34" name="zr1-5.l3"/>

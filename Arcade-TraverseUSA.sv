@@ -85,7 +85,7 @@ module emu
 	output  [1:0] LED_POWER,
 	output  [1:0] LED_DISK,
 
-        input         CLK_AUDIO, // 24.576 MHz
+   input         CLK_AUDIO, // 24.576 MHz
 	output [15:0] AUDIO_L,
 	output [15:0] AUDIO_R,
 	output        AUDIO_S,   // 1 - signed audio samples, 0 - unsigned
@@ -122,6 +122,9 @@ assign LED_USER  = ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 
+assign {FB_PAL_CLK, FB_FORCE_BLANK, FB_PAL_ADDR, FB_PAL_DOUT, FB_PAL_WR} = '0;
+
+
 wire [1:0] ar = status[17:16];
 
 assign VIDEO_ARX =  (!ar) ? ( 8'd4) : (ar - 1'd1);
@@ -135,13 +138,7 @@ localparam CONF_STR = {
 	"H0O2,Orientation,Vert,Horz;",
 	"O35,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
-	"O89,Fuel Lst W Coll,Low,Med,High,Max;",
-	"OA,Fuel Consumption,Low,High;",
-	"OB,Allow Continue,Yes,No;",
-	"OC,Cabinet,Upright,Cocktail;",
-	"OD,Service Mode,Off,On;",
-	"OE,Title,Traverse USA,Zippy;",
-	"OF,Units,M/H,Km;",
+	"DIP;",
 	"-;",
 	"R0,Reset;",
 	"J1,Gas,Brake,Start 1P,Start 2P,Coin;",
@@ -150,20 +147,12 @@ localparam CONF_STR = {
 	"V,v",`BUILD_DATE
 };
 
-wire [7:0]m_dip_1 = {1'b0 , 1'b0,1'b0 , 1'b0,status[11],status[10],status[9:8]};
-wire [7:0]m_dip_2 = {status[13],1'b0,status[14],1'b0,status[15],1'b0,~status[12],1'b1};
-	// dip_switch_1  => x"FF",  -- Coinage_B(7-4) / Cont. play(3) / Fuel consumption(2) / Fuel lost when collision (1-0)
-   // dip_switch_2  => x"FE",  -- Diag(7) / Demo(6) / Zippy(5) / Freeze (4) / M-Km(3) / Coin mode (2) / Cocktail(1) / Flip(0)
-
-
-	// dip_switch_1  => x"FF",  -- Coinage_B(7-4) / Cont. play(3) / Fuel consumption(2) / Fuel lost when collision (1-0)
-   // dip_switch_2  => x"FE",  -- Diag(7) / Demo(6) / Zippy(5) / Freeze (4) / M-Km(3) / Coin mode (2) / Cocktail(1) / Flip(0)
 
 ////////////////////   CLOCKS   ///////////////////
 
 wire clk_sys, clk_snd;
 wire pll_locked;
-wire clk_36,clk_3p58,clk_72,clk_6;
+wire clk_36,clk_aud,clk_72;
 assign clk_sys=clk_36;
 pll pll
 (
@@ -171,17 +160,18 @@ pll pll
 	.rst(0),
 	.outclk_0(clk_72),
 	.outclk_1(clk_36),
-	.outclk_2(clk_6),
-	.outclk_3(clk_3p58),
+	.outclk_2(clk_aud),
 	.locked(pll_locked)
 );
 
-reg ce_6m;
-always @(posedge clk_sys) begin
-	reg [1:0] div;
-	
-	div <= div + 1'd1;
-	ce_6m <= !div;
+
+
+reg clk_aud2;
+always @(posedge clk_36) begin
+        reg [4:0] div;
+
+        div <= div + 1'd1;
+        clk_aud2 <= !div;
 end
 
 ///////////////////////////////////////////////////
@@ -195,7 +185,7 @@ wire        ioctl_download;
 wire        ioctl_wr;
 wire [24:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
-
+wire  [7:0] ioctl_index;
 
 wire [15:0] joystick_0,joystick_1;
 wire [15:0] joy = joystick_0 | joystick_1;
@@ -221,10 +211,29 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 	.ioctl_wr(ioctl_wr),
 	.ioctl_addr(ioctl_addr),
 	.ioctl_dout(ioctl_dout),
+	.ioctl_index(ioctl_index),
 
 	.joystick_0(joystick_0),
-	.joystick_1(joystick_1),
+	.joystick_1(joystick_1)
 );
+
+
+reg mod_traverseusa    = 0;
+reg mod_shotrider      = 0;
+
+
+always @(posedge clk_sys) begin
+	reg [7:0] mod = 0;
+	if (ioctl_wr & (ioctl_index==1)) mod <= ioctl_dout;
+
+	mod_traverseusa	   <= (mod == 0);
+	mod_shotrider	   <= (mod == 1);
+end
+
+// load the DIPS
+reg [7:0] sw[8];
+always @(posedge clk_sys) if (ioctl_wr && (ioctl_index==254) && !ioctl_addr[24:3]) sw[ioctl_addr[2:0]] <= ioctl_dout;
+
 
 wire m_left   =  joy[1];
 wire m_right  =  joy[0];
@@ -242,7 +251,6 @@ wire m_coin   = joy[8];
 
 
 wire hblank, vblank;
-wire ce_vid = ce_6m;
 wire hs, vs;
 wire [1:0] rs;
 wire [2:0] g;
@@ -260,7 +268,7 @@ end
 
 wire rotate_ccw = 0;
 screen_rotate screen_rotate (.*);
-
+//393
 // see note in readme about weird video problems
 arcade_video #(384,9) arcade_video
 //arcade_rotate_fx #(360,248,9) arcade_video
@@ -279,23 +287,47 @@ arcade_video #(384,9) arcade_video
 );
 
 
+
 wire [10:0] audio;
-assign AUDIO_L =  {audio, 5'd0};
-assign AUDIO_R = AUDIO_L;
+assign AUDIO_L = sb_l;
+assign AUDIO_R = sb_r;
 assign AUDIO_S = 0;
 
+wire [15:0] sb_out_l = {audio, 5'd0};
+wire [15:0] sb_out_r = {audio, 5'd0};
 
+
+wire [15:0] sb_l, sb_r;
+always @(posedge CLK_AUDIO) begin
+	reg [15:0] old_l0, old_l1, old_r0, old_r1;
+	
+	old_l0 <= sb_out_l;
+	old_l1 <= old_l0;
+	if(old_l0 == old_l1) sb_l <= old_l1;
+
+	old_r0 <= sb_out_r;
+	old_r1 <= old_r0;
+	if(old_r0 == old_r1) sb_r <= old_r1;
+end
+
+
+
+reg reset;
+always @(posedge clk_sys) begin
+	reset <=(RESET | status[0] | buttons[1] | ioctl_download);
+end
 traverse_usa traverse_usa
 (
 
 	.clock_36(clk_36),
-	.clock_3p58(clk_3p58),
-	.reset(RESET | status[0] | buttons[1] | ioctl_download),
+	.clock_0p895(clk_aud),
+	.shtrider(mod_shotrider),
+	.reset(reset),
 	
 	
 	.dn_addr(ioctl_addr[16:0]),
 	.dn_data(ioctl_dout),
-	.dn_wr(ioctl_wr),
+	.dn_wr(ioctl_wr && !ioctl_index),
 
 	
 	.video_r(rs),
@@ -309,26 +341,20 @@ traverse_usa traverse_usa
 	.video_vblank(vblank),
 
 	.audio_out(audio),
-	//.dip_switch_1(8'b11111111),
-	//.dip_switch_2(8'b11111110),
-	.dip_switch_1(~m_dip_1),
-	.dip_switch_2(~m_dip_2),
-	// dip_switch_1  => x"FF",  -- Coinage_B(7-4) / Cont. play(3) / Fuel consumption(2) / Fuel lost when collision (1-0)
-   // dip_switch_2  => x"FE",  -- Diag(7) / Demo(6) / Zippy(5) / Freeze (4) / M-Km(3) / Coin mode (2) / Cocktail(1) / Flip(0)
-
-// dip_switch_1   : in std_logic_vector(7 downto 0); -- Coinage_B(7-4) / Cont. play(3) / Fuel consumption(2) / Fuel lost when collision (1-0)
-// dip_switch_2   : in std_logic_vector(7 downto 0); -- Diag(7) / Demo(6) / Zippy(5) / Freeze (4) / M-Km(3) / Coin mode (2) / Cocktail(1) / Flip(0)
-  .start2(m_start2),
-  .start1(m_start1),
-  .coin1(m_coin|btn_coin_2),
-  .right1(m_right),
-  .left1(m_left),
-  .accel1(m_gas),
-  .brake1(m_brake),
-  .right2(m_right_2),
-  .left2(m_left_2),
-  .accel2(m_gas_2),
-  .brake2(m_brake_2) 
+	.dip_switch_1(sw[0]),
+	.dip_switch_2(sw[1]),
+	
+	.start2(m_start2),
+	.start1(m_start1),
+	.coin1(m_coin),
+	.right1(m_right),
+	.left1(m_left),
+	.accel1(m_gas),
+	.brake1(m_brake),
+	.right2(m_right_2),
+	.left2(m_left_2),
+	.accel2(m_gas_2),
+	.brake2(m_brake_2) 
   //.dbg_cpu_addr()
  );
 
