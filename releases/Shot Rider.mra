@@ -9,6 +9,19 @@
     <rbf>traverseusa</rbf>
 	
  	<switches default="FF,FE,00">
+		<dip bits="0,2" name="Coin A" ids="5 Coins/1 Credit,1c/5cr,3c/1cr,1c/2cr,4 Coins/1 Credit,1c/3cr,2c/1cr,1c/1cr"/>
+		<dip bits="3,4" name="Coin B" ids="3c/1cr,1c/2cr,2c/1cr,1c/1cr"/>
+		<dip bits="5" name="Unknown" ids="On,Off"/>
+		<dip bits="6" name="Unknown" ids="On,Off"/>
+		<dip bits="7" name="Unknown" ids="On,Off"/>
+		<dip bits="8" name="Flip Screen" ids="On,Off"/>
+		<dip bits="9" name="Speed Display" ids="mph,km/h"/>
+		<dip bits="10" name="Unknown" ids="On,Off"/>
+		<dip bits="11" name="Cabinet" ids="Cocktail,Upright"/>
+		<dip bits="12" name="Unknown" ids="On,Off"/>
+		<dip bits="13" name="Unknown" ids="On,Off"/>
+		<dip bits="14" name="Unknown" ids="On,Off"/>
+		<dip bits="15" name="Unknown" ids="On,Off"/>
 	</switches>
 
 	<buttons names="Gas,Brake,Start 1P,Start 2P,Coin" default="A,B,Start,Select,R"/>
