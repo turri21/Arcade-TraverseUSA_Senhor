@@ -110,14 +110,13 @@ use ieee.numeric_std.all;
 entity traverse_usa is
 port(
  clock_36     : in std_logic;
- clock_0p895  : in std_logic;
+ ce_0p895     : in std_logic;
  reset        : in std_logic;
  shtrider       : in std_logic; -- Shot Rider mode
 -- tv15Khz_mode : in std_logic;
  video_r        : out std_logic_vector(1 downto 0);
  video_g        : out std_logic_vector(2 downto 0);
  video_b        : out std_logic_vector(2 downto 0);
- video_clk      : out std_logic;
  video_csync    : out std_logic;
  video_blankn   : out std_logic;
  video_hs       : out std_logic;
@@ -146,6 +145,7 @@ port(
  dbg_cpu_addr : out std_logic_vector(15 downto 0);
  
  -- signals that carry the ROM data from the MiSTer disk
+ dn_clk         : in std_logic;
  dn_addr        : in  std_logic_vector(16 downto 0);
  dn_data        : in  std_logic_vector(7 downto 0);
  dn_wr          : in  std_logic
@@ -174,6 +174,7 @@ architecture struct of traverse_usa is
  signal hsync1  : std_logic; 
  signal hsync2  : std_logic; 
 
+ signal sprblank: std_logic; 
  signal hblank  : std_logic; 
  signal vblank  : std_logic; 
  
@@ -278,7 +279,7 @@ architecture struct of traverse_usa is
  signal rom_spr_1_cs :std_logic;
  signal rom_spr_2_cs :std_logic;
  signal rom_spr_3_cs :std_logic;
- signal rom_chr_plt_cs: std_logic;
+ --signal rom_chr_plt_cs: std_logic;
  signal rom_spr_plt_cs: std_logic;
  signal rom_spr_rgb_lut_cs: std_logic;
  
@@ -312,7 +313,7 @@ rom_gfx_3_cs <= '1' when dn_addr(16 downto 13) = "0111"     else '0';
 rom_spr_1_cs  <= '1' when dn_addr(16 downto 13) = "1000"     else '0'; 
 rom_spr_2_cs  <= '1' when dn_addr(16 downto 13) = "1001"     else '0'; 
 rom_spr_3_cs  <= '1' when dn_addr(16 downto 13) = "1010"     else '0'; 
-rom_chr_plt_cs  <= '1' when dn_addr(16 downto 9) = "10110000"     else '0'; 
+--rom_chr_plt_cs  <= '1' when dn_addr(16 downto 9) = "10110000"     else '0'; 
 rom_spr_plt_cs  <= '1' when dn_addr(16 downto 8) = "101100010"     else '0'; 
 rom_spr_rgb_lut_cs <= '1' when dn_addr(16 downto 7) = "1011000110"     else '0'; 
 
@@ -329,19 +330,15 @@ begin
 end process;
 
 -- make enables clock from 36MHz
-process (clock_36, reset)
+process (clock_36)
 begin
-	if reset='1' then
-		clock_cnt <= "0000";
-	else 
-		if rising_edge(clock_36) then
-			if clock_cnt = "1011" then
-				clock_cnt <= "0000";
-			else
-				clock_cnt <= clock_cnt + 1;
-			end if;
+	if rising_edge(clock_36) then
+		if clock_cnt = "1011" then
+			clock_cnt <= "0000";
+		else
+			clock_cnt <= clock_cnt + 1;
 		end if;
-	end if;   		
+	end if;
 end process;
 
 pix_ena <= '1' when clock_cnt = "0101" or clock_cnt = "1011" else '0'; -- (6MHz)
@@ -365,7 +362,8 @@ begin
 				hcnt <= '0'&x"80";
 				vcnt <= vcnt + 1;
 				if vcnt = '1'&x"FF" then
-					vcnt <= '0'&x"E6";  -- from M52 schematics
+					--vcnt <= '0'&x"E6";  -- from M52 schematics
+					vcnt <= '0'&x"C8";
 				end if;
 			end if;
 		end if;
@@ -468,7 +466,6 @@ sprram_we <= '1' when cpu_wr_n = '0' and cpu_addr(15 downto 11) = X"C"&"1" and c
 
 sprram_addr <= '0' & spr_hcnt(10 downto 4) & spr_hcnt(2 downto 1) when  cpu_has_spr_ram = '0' else
 					cpu_addr(9 downto 0);
-
 
 -- latch current sprite data with respect to pixel and hcnt in relation with sprite data ram addressing  
 process (clock_36)
@@ -670,7 +667,7 @@ begin
 		if pix_ena = '1' then
 			-- always give priority to sprite when not 0000
 			-- except for char color #6 and #7 of color set#15
-			if spr_output_line_do /= "0000" and 
+			if spr_output_line_do /= "0000" and sprblank = '0' and
 				 (chr_palette_addr(6 downto 0) < "1111110") then 
 				video_r <= spr_rgb_lut_do(7 downto 6);
 				video_g <= spr_rgb_lut_do(5 downto 3);
@@ -694,19 +691,18 @@ end process;
 ---------------------------------------------------------
 moon_patrol_sound_board : entity work.moon_patrol_sound_board
 port map(
- clock_36   => clock_36,
- clock_E      => clock_0p895,
- areset       => reset,
+ clk          => clock_36,
+ ce           => ce_0p895,
+ reset        => reset,
  
  select_sound => sound_cmd, -- not(key(1)) & sw(6 downto 0),
  audio_out    => audio,
 
  dbg_cpu_addr => open, --dbg_cpu_addr
- dn_wr => dn_wr,
- dn_addr=>dn_addr,
- dn_data=>dn_data,
-		
- rom_snd_cs=>rom_snd_cs
+ dn_clk       => dn_clk,
+ dn_wr        => dn_wr and rom_snd_cs,
+ dn_addr      => dn_addr,
+ dn_data      => dn_data
 );
 
 
@@ -749,7 +745,7 @@ if rising_edge(clock_36) and pix_ena = '1' then
 	end if;
   
 	if hcnt = hcnt_base then 
-		if vcnt = 238 then
+		if vcnt = 220 then
 			vsync_cnt := X"0";
 		else
 			if vsync_cnt < X"F" then vsync_cnt := vsync_cnt + 1; end if;
@@ -769,20 +765,22 @@ if rising_edge(clock_36) and pix_ena = '1' then
 	end if;
 
 	-- hcnt : [128-511] 384 pixels
-	if    hcnt = 128 then hblank <= '1'; 
-	elsif hcnt = 272 then hblank <= '0';
+	if    hcnt = 130 then hblank <= '1'; 
+	elsif hcnt = 274 then hblank <= '0';
+	end if;
+
+	if    hcnt = 128 then sprblank <= '1'; 
+	elsif hcnt = 274 then sprblank <= '0';
 	end if;
 
 	-- vcnt : [230-511] 282 lines
-	if    vcnt = 230 then vblank <= '1';
+	if    vcnt = 200 then vblank <= '1';
+	elsif vcnt = 230 then vblank <= '1';
 	elsif vcnt = 256 then vblank <= '0';
 	end if;
 
 	-- external sync and blank outputs
 	video_blankn <= not (hblank or vblank);
-	video_hblank <= hblank;
-	video_vblank <= vblank;
-	
 --
     video_hs <= hsync0;
 --  
@@ -793,17 +791,20 @@ if rising_edge(clock_36) and pix_ena = '1' then
 end if;
 end process;
 
+video_hblank <= hblank;
+video_vblank <= vblank;
+
 ------------------------------
 -- components & sound board --
 ------------------------------
 
 -- microprocessor Z80
-cpu : entity work.T80se
+cpu : entity work.T80s
 generic map(Mode => 0, T2Write => 1, IOWait => 1)
 port map(
   RESET_n => reset_n,
-  CLK_n   => clock_36,
-  CLKEN   => cpu_ena,
+  CLK     => clock_36,
+  CEN     => cpu_ena,
   WAIT_n  => '1',
   INT_n   => cpu_irq_n,
   NMI_n   => '1', --cpu_nmi_n,
@@ -832,7 +833,7 @@ port map(
 rom_cpu : work.dpram generic map (15,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_cpu_cs,
 	address_a => dn_addr(14 downto 0),
 	data_a    => dn_data,
@@ -925,7 +926,7 @@ port map(
 char_graphics_1 : work.dpram generic map (13,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_gfx_1_cs,
 	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
@@ -937,7 +938,7 @@ port map
 char_graphics_2 : work.dpram generic map (13,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_gfx_2_cs,
 	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
@@ -949,7 +950,7 @@ port map
 char_graphics_3 : work.dpram generic map (13,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_gfx_3_cs,
 	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
@@ -969,7 +970,7 @@ port map
 --char_palette : work.dpram generic map (9,8)
 --port map
 --(
---	clock_a   => clock_36,
+--	clock_a   => dn_clk,
 --	wren_a    => dn_wr and rom_chr_plt_cs,
 --	address_a => dn_addr(8 downto 0),
 --	data_a    => dn_data,
@@ -982,7 +983,7 @@ port map
 char_palette_1 : entity work.dpram
 generic map(  8,  8)
 port map(
- 	clock_a   => clock_36,
+ 	clock_a   => dn_clk,
 	wren_a    => dn_wr and chr_palette_1_we,
 	address_a => dn_addr(7 downto 0),
 	data_a    => dn_data,
@@ -997,7 +998,7 @@ chr_palette_1_we <= '1' when dn_addr(16 downto 8) = "101100000"  else '0'; -- 16
 char_palette_2 : entity work.dpram
 generic map(  8, 8)
 port map(
- 	clock_a   => clock_36,
+ 	clock_a   => dn_clk,
 	wren_a    => dn_wr and chr_palette_2_we,
 	address_a => dn_addr(7 downto 0),
 	data_a    => dn_data,
@@ -1035,7 +1036,7 @@ chr_palette_2_we <= '1' when dn_addr(16 downto 8) = "101100001"  else '0'; -- 16
 sprite_graphics1 : work.dpram generic map (13,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_spr_1_cs,
 	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
@@ -1047,7 +1048,7 @@ port map
 sprite_graphics2 : work.dpram generic map (13,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_spr_2_cs,
 	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
@@ -1059,7 +1060,7 @@ port map
 sprite_graphics3 : work.dpram generic map (13,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_spr_3_cs,
 	address_a => dn_addr(12 downto 0),
 	data_a    => dn_data,
@@ -1081,7 +1082,7 @@ port map
 spr_palette : work.dpram generic map (8,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_spr_plt_cs,
 	address_a => dn_addr(7 downto 0),
 	data_a    => dn_data,
@@ -1102,7 +1103,7 @@ port map
 spr_rgb_lut : work.dpram generic map (5,8)
 port map
 (
-	clock_a   => clock_36,
+	clock_a   => dn_clk,
 	wren_a    => dn_wr and rom_spr_rgb_lut_cs,
 	address_a => dn_addr(4 downto 0),
 	data_a    => dn_data,

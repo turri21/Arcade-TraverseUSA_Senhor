@@ -69,7 +69,7 @@ Quickreference for folders and file placement:
 --  PS2 keyboard input @gpio pins 35/34 (beware voltage translation/protection) 
 --  Audio pwm output   @gpio pins 1/3 (beware voltage translation/protection) 
 --
---  Video         : 15Khz only atm
+--  Video         : 15Khz/31Khz
 --  Cocktail mode : OK
 --  Sound         : OK
 -- 
@@ -123,7 +123,7 @@ Quickreference for folders and file placement:
 ---------------------------------------------------------------------------------
 
 --  Features :
---   Video        : TV 15KHz mode only (atm)
+--   Video        : TV 15KHz/31KHz
 --   Coctail mode : OK
 --   Sound        : OK
 

@@ -124,12 +124,9 @@ assign LED_POWER = 0;
 
 assign {FB_PAL_CLK, FB_FORCE_BLANK, FB_PAL_ADDR, FB_PAL_DOUT, FB_PAL_WR} = '0;
 
-
 wire [1:0] ar = status[17:16];
-
-assign VIDEO_ARX =  (!ar) ? ( 8'd4) : (ar - 1'd1);
-assign VIDEO_ARY =  (!ar) ? ( 8'd3) : 12'd0;
-
+assign VIDEO_ARX = (!ar) ? (status[2] ? 8'd4 : 8'd3) : (ar - 1'd1);
+assign VIDEO_ARY = (!ar) ? (status[2] ? 8'd3 : 8'd4) : 12'd0;
 
 `include "build_id.v" 
 localparam CONF_STR = {
@@ -150,22 +147,16 @@ localparam CONF_STR = {
 
 ////////////////////   CLOCKS   ///////////////////
 
-wire clk_sys, clk_snd;
-wire pll_locked;
-wire clk_36,clk_aud,clk_72;
-assign clk_sys=clk_36;
+wire clk_36,clk_48;
+wire clk_sys = clk_36;
+
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
-	.outclk_0(clk_72),
-	.outclk_1(clk_36),
-	.outclk_2(clk_aud),
-	.locked(pll_locked)
+	.outclk_0(clk_48),
+	.outclk_1(clk_36)
 );
-
-
-
 
 ///////////////////////////////////////////////////
 
@@ -211,15 +202,14 @@ hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 );
 
 
-reg mod_traverseusa    = 0;
+//reg mod_traverseusa    = 0;
 reg mod_shotrider      = 0;
-
 
 always @(posedge clk_sys) begin
 	reg [7:0] mod = 0;
 	if (ioctl_wr & (ioctl_index==1)) mod <= ioctl_dout;
 
-	mod_traverseusa	   <= (mod == 0);
+	//mod_traverseusa	<= (mod == 0);
 	mod_shotrider	   <= (mod == 1);
 end
 
@@ -252,11 +242,11 @@ wire [2:0] r={rs,1'b0};
 
 wire no_rotate = status[2] | direct_video;
 reg ce_pix;
-always @(posedge clk_72) begin
-        reg [2:0] div;
+always @(posedge clk_48) begin
+	reg [2:0] div;
 
-        div <= div + 1'd1;
-        ce_pix <= !div;
+	div <= div + 1'd1;
+	ce_pix <= !div;
 end
 
 wire rotate_ccw = 0;
@@ -268,7 +258,7 @@ arcade_video #(384,9) arcade_video
 (
 	.*,
 
-	.clk_video(clk_72),
+	.clk_video(clk_48),
 
 	.RGB_in({r,g,b}),
 	.HBlank(hblank),
@@ -279,54 +269,41 @@ arcade_video #(384,9) arcade_video
 	.fx(status[5:3])
 );
 
-
-
 wire [10:0] audio;
-assign AUDIO_L = sb_l;
-assign AUDIO_R = sb_r;
+assign AUDIO_L = {audio, 5'd0};
+assign AUDIO_R = {audio, 5'd0};
 assign AUDIO_S = 0;
 
-wire [15:0] sb_out_l = {audio, 5'd0};
-wire [15:0] sb_out_r = {audio, 5'd0};
+reg aud_ce;
+always @(posedge clk_36) begin
+	reg [15:0] sum;
 
-
-wire [15:0] sb_l, sb_r;
-always @(posedge CLK_AUDIO) begin
-	reg [15:0] old_l0, old_l1, old_r0, old_r1;
-	
-	old_l0 <= sb_out_l;
-	old_l1 <= old_l0;
-	if(old_l0 == old_l1) sb_l <= old_l1;
-
-	old_r0 <= sb_out_r;
-	old_r1 <= old_r0;
-	if(old_r0 == old_r1) sb_r <= old_r1;
+	aud_ce = 0;
+	sum = sum + 16'd895;
+	if(sum >= 36000) begin
+		sum = sum - 16'd36000;
+		aud_ce = 1;
+	end
 end
-
-
 
 reg reset;
-always @(posedge clk_sys) begin
-	reset <=(RESET | status[0] | buttons[1] | ioctl_download);
-end
+always @(posedge clk_sys) reset <=(RESET | status[0] | buttons[1] | ioctl_download);
+
 traverse_usa traverse_usa
 (
-
 	.clock_36(clk_36),
-	.clock_0p895(clk_aud),
+	.ce_0p895(aud_ce),
 	.shtrider(mod_shotrider),
 	.reset(reset),
-	
-	
+
+	.dn_clk(clk_sys),
 	.dn_addr(ioctl_addr[16:0]),
 	.dn_data(ioctl_dout),
 	.dn_wr(ioctl_wr && !ioctl_index),
 
-	
 	.video_r(rs),
 	.video_g(g),
 	.video_b(b),
-	//.video_clk(video_clk), not hooked up?
 	.video_hs(hs),
 	.video_vs(vs),
 	
