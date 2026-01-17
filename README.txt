@@ -1,3 +1,8 @@
+-=(TraverseUSA_Senhor notes)=-
+
+Tested: Working Video 720p, 1080p & Sound.
+
+___
 ---------------------------------------------------------------------------------
 --
 -- Arcade: Traverse USA by Dar ported to MiSTer
@@ -329,3 +334,4 @@ You can build the project with ROM image embeded in the sof file.
 ------------------------
 End of file
 ------------------------
+
